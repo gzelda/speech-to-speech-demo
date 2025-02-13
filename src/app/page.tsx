@@ -57,14 +57,16 @@ function useTTS(cartesia: Cartesia | null) {
     const startTime = performance.now();
 
     try {
+      console.log("Websocket request:", text);
       const response = await websocket.current.send({
-        model_id: "upbeat-moon",
+        model_id: "sonic-preview",
         voice: {
-          mode: "embedding",
-          embedding: reflectiveWomanEmbedding,
+          mode: "id",
+          id: "694f9389-aac1-45b6-b726-9d9369183238",
         },
         transcript: text,
       });
+      console.log("Websocket response received:", response);
 
       let receivedFirst = false;
       for await (const message of response.events("message")) {
@@ -76,6 +78,7 @@ function useTTS(cartesia: Cartesia | null) {
         }
       }
     } catch (error) {
+      alert("Error sending message: " + error);
       console.error(`Error sending message: ${error}`);
     }
   };
@@ -94,6 +97,7 @@ async function transcribe(blob: Blob, groq: Groq) {
   });
   const endTime = performance.now();
   console.log(`[TRANSCRIPTION]: ${(endTime - startTime).toFixed(2)} ms`);
+  console.log(`[TRANSCRIPTION] response text: ${response.text}`);
   return response;
 }
 
@@ -275,6 +279,7 @@ const useAudioRecorder = ({
   };
 
   const stopRecording = () => {
+    console.log("Stopping recording");
     if (mediaRecorder) {
       mediaRecorder.onstop = () => {
         handleChunks();
@@ -301,6 +306,7 @@ const useAudioRecorder = ({
       console.log(`Audio chunk size: ${chunk.size} bytes`);
       transcription += (await transcribe(chunk, groq)).text;
     }
+    console.log("[handleChunks] transcription:", transcription);
 
     // We trim by default to avoid problematic leading/trailing whitespace
     transcription = transcription.trim();
@@ -442,12 +448,7 @@ function App({
   const { isRecording, startRecording, stopRecording, volume } =
     useAudioRecorder({
       onTranscribe: async (transcription: string) => {
-        historyRef.current = [
-          ...historyRef.current,
-          { role: "user", content: transcription },
-        ];
-
-        await triggerCompletionFlow();
+        await speak(transcription)
       },
       onRecordingStart: () => {
         historyRef.current = [...historyRef.current];
@@ -473,27 +474,28 @@ function App({
   }, [stopRecording]);
 
   const triggerCompletionFlow = async () => {
-    
+    console.log("[triggerCompletionFlow] current:", historyRef.current);
     const { contentBuffer: response, toolCalls } = await streamCompletion(
       historyRef.current,
       groq
     );
+    console.log("[triggerCompletionFlow] response:", response);
     setHistoryLastUpdate(new Date());
 
     // In the completion flow we also handle 
     // calling the generated toolCalls in case there are any, which can recursively
     // call triggerCompletionFlow in case
     // more toolCalls are generated.
-    if (toolCalls.length > 0) {
-      await handleToolCalls(toolCalls);
-    }
+    // if (toolCalls.length > 0) {
+    //   await handleToolCalls(toolCalls);
+    // }
 
     if (response.length > 0) {
-      setHistoryLastUpdate(new Date());
-      historyRef.current = [
-        ...historyRef.current,
-        { role: "assistant", content: response },
-      ];
+      // setHistoryLastUpdate(new Date());
+      // historyRef.current = [
+      //   ...historyRef.current,
+      //   { role: "assistant", content: response },
+      // ];
       await speak(response);
     }
   };
@@ -525,35 +527,6 @@ function App({
 
     return () => observer.disconnect();
   }, []);
-
-  const handleToolCalls = async (
-    toolCalls: Groq.Chat.ChatCompletionMessageToolCall[]
-  ) => {
-    // Assumed only called with toolCalls > 0
-    if (toolCalls.length == 0) {
-      throw new Error("only call handleToolCalls with toolCalls > 0");
-    }
-
-    historyRef.current = [
-      ...historyRef.current,
-      { role: "assistant", tool_calls: toolCalls },
-    ];
-
-    for (const toolCall of toolCalls) {
-      const { function: toolFunction } = toolCall;
-      if (toolFunction && toolHandlers[toolFunction.name]) {
-        const toolResponse = await toolHandlers[toolFunction.name](
-          JSON.parse(toolFunction.arguments)
-        );
-
-        historyRef.current = [
-          ...historyRef.current,
-          { role: "tool", content: toolResponse, tool_call_id: toolCall.id },
-        ];
-      }
-    }
-    await triggerCompletionFlow();
-  };
 
   return (
     <div className="flex h-full flex-col">
