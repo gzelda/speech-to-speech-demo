@@ -9,6 +9,12 @@ const users = [
     email: 'dummy@groq.com',
     password: bcrypt.hashSync('groqspeed', 10),
   },
+  {
+    id: 2,
+    name: 'gavin',
+    email: 'gavin@gmail.com',
+    password: bcrypt.hashSync('123456', 10),
+  },
   // Add more users as needed
 ];
 
